@@ -85,7 +85,7 @@ router.post(
 			title: title,
 			shortTitle: shortTitle,
 			content: content,
-			imagePath: imagePath,
+			imagePath: `uploads/${req.file.filename}`,
 		});
 
 		try {
@@ -130,12 +130,9 @@ router.put(
 					if (err.code === "ENOENT") {
 						return;
 					}
-					return res
-						.status(500)
-						.json({
-							error:
-								"An error occurred while deleting the file: " + err.message,
-						});
+					return res.status(500).json({
+						error: "An error occurred while deleting the file: " + err.message,
+					});
 				}
 			});
 		} catch (err) {
