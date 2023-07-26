@@ -34,7 +34,9 @@ const upload = multer({
 	storage: storage,
 	fileFilter: function (req, file, cb) {
 		if (!file.mimetype.startsWith("image/")) {
-			return cb(new Error("File needs to be an image"));
+			return cb(
+				new Error(`File needs to be an image. current type: ${file.mimetype}`)
+			);
 		}
 		cb(null, true);
 	},
@@ -42,7 +44,9 @@ const upload = multer({
 
 const handleUploadError = function (err, req, res, next) {
 	if (err instanceof multer.MulterError) {
-		res.status(400).json({ error: "File needs to be an image" });
+		res
+			.status(400)
+			.json({ error: "File needs to be an image or: " + err.message });
 	} else if (err) {
 		res.status(400).json({ error: err.message });
 	} else {
@@ -58,7 +62,6 @@ router.post(
 	async (req, res) => {
 		const { title, shortTitle, content } = req.body;
 		const imagePath = req.file.path;
-		console.log(imagePath);
 
 		await sharp(imagePath)
 			.resize(800)
@@ -67,7 +70,10 @@ router.post(
 			.then(() => {
 				fs.unlink(imagePath, (err) => {
 					if (err) {
-						console.error("Errore durante la cancellazione del file:", err);
+						console.error(
+							"Errore durante la cancellazione del file: ",
+							err.message
+						);
 						return;
 					}
 
@@ -85,6 +91,69 @@ router.post(
 		try {
 			await newPost.save();
 			res.status(200).json(newPost);
+		} catch (err) {
+			res.status(500).json({ error: err.message });
+		}
+	}
+);
+
+router.put(
+	"/post/:id",
+	verifyToken,
+	upload.single("image"),
+	handleUploadError,
+	async (req, res) => {
+		const { title, shortTitle, content } = req.body;
+		const postId = req.params.id;
+		let imagePath = req.file && req.file.path;
+
+		if (imagePath) {
+			await sharp(imagePath)
+				.resize(800)
+				.jpeg({ quality: 80 })
+				.toFile(`uploads/${req.file.filename}`)
+				.then(() => {
+					fs.unlink(imagePath, (err) => {
+						if (err) {
+							res.status(500).json("Error during file deletion: ", err);
+							return;
+						}
+					});
+				});
+			imagePath = `uploads/${req.file.filename}`;
+		}
+
+		try {
+			const oldPost = await Post.findById(postId);
+			fs.unlink(oldPost.imagePath, (err) => {
+				if (err) {
+					if (err.code === "ENOENT") {
+						return;
+					}
+					return res
+						.status(500)
+						.json({
+							error:
+								"An error occurred while deleting the file: " + err.message,
+						});
+				}
+			});
+		} catch (err) {
+			res.status(500).json({ error: err.message });
+		}
+
+		try {
+			const updatedPost = await Post.findByIdAndUpdate(
+				postId,
+				{
+					title: title,
+					shortTitle: shortTitle,
+					content: content,
+					imagePath: imagePath,
+				},
+				{ new: true }
+			);
+			res.status(200).json(updatedPost);
 		} catch (err) {
 			res.status(500).json({ error: err.message });
 		}
